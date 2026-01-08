@@ -196,6 +196,9 @@ async def analyze_apk(request: AnalysisRequest):
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_detail = f"Analysis failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR: {error_detail}")  # Log for Render
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
