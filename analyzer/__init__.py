@@ -5,6 +5,8 @@ from .certificate_analyzer import CertificateAnalyzer
 from .obfuscation_detector import ObfuscationDetector
 from .network_extractor import NetworkExtractor
 from .risk_engine import RiskEngine
+from .virustotal_analyzer import VirusTotalAnalyzer, LocalSandboxSimulator
+from .pdf_generator import PDFReportGenerator, ReportData
 
 __all__ = [
     'APKParser',
@@ -12,5 +14,9 @@ __all__ = [
     'CertificateAnalyzer',
     'ObfuscationDetector',
     'NetworkExtractor',
-    'RiskEngine'
+    'RiskEngine',
+    'VirusTotalAnalyzer',
+    'LocalSandboxSimulator',
+    'PDFReportGenerator',
+    'ReportData'
 ]

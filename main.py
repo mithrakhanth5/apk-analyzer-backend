@@ -1,16 +1,20 @@
 """
 APK Risk Analyzer - FastAPI Backend
 Secure, consent-based pre-installation APK risk assessment API.
+With sandbox-based inspection and PDF report generation.
 """
 import base64
 import hashlib
 import tempfile
 import os
+from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
+from io import BytesIO
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
@@ -20,7 +24,11 @@ from analyzer import (
     CertificateAnalyzer,
     ObfuscationDetector,
     NetworkExtractor,
-    RiskEngine
+    RiskEngine,
+    VirusTotalAnalyzer,
+    LocalSandboxSimulator,
+    PDFReportGenerator,
+    ReportData
 )
 
 
@@ -65,6 +73,19 @@ class CertificateResponse(BaseModel):
     warnings: List[str]
 
 
+class SandboxResponse(BaseModel):
+    """Sandbox analysis results"""
+    detection_ratio: str
+    positives: int
+    total_scanners: int
+    threat_level: str
+    malware_names: List[str] = []
+    behaviors_detected: List[Dict[str, Any]] = []
+    risk_score: int
+    warnings: List[str] = []
+    error_message: str = ""
+
+
 class AnalysisResponse(BaseModel):
     """Complete analysis response"""
     analysis_id: str
@@ -81,11 +102,13 @@ class AnalysisResponse(BaseModel):
     certificate_score: int
     obfuscation_score: int
     network_score: int
+    sandbox_score: int = 0  # Sandbox analysis score
     
     # Detailed findings
     findings: List[FindingResponse]
     permissions: List[PermissionRiskResponse]
     certificate: CertificateResponse
+    sandbox: Optional[SandboxResponse] = None  # Sandbox results
     
     summary: str
     recommendation: str
@@ -226,7 +249,7 @@ async def analyze_apk_upload(file: UploadFile = File(...)):
 
 async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisResponse:
     """
-    Perform the actual APK analysis.
+    Perform the actual APK analysis including sandbox inspection.
     """
     import uuid
     
@@ -237,6 +260,8 @@ async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisRespons
     obfuscation_detector = ObfuscationDetector()
     network_extractor = NetworkExtractor()
     risk_engine = RiskEngine()
+    vt_analyzer = VirusTotalAnalyzer()
+    local_sandbox = LocalSandboxSimulator()
     
     # Parse APK
     metadata = parser.parse_from_bytes(apk_bytes)
@@ -254,7 +279,47 @@ async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisRespons
     # Run network extraction (basic - from class names for now)
     net_result = network_extractor.analyze(strings=dex_info.get("classes", []))
     
-    # Calculate overall risk
+    # ========== SANDBOX ANALYSIS ==========
+    # Try VirusTotal first (cloud sandbox)
+    vt_result = await vt_analyzer.analyze_hash(file_hash)
+    
+    # Also run local sandbox simulation for behavior detection
+    local_sandbox_result = local_sandbox.analyze(
+        dex_classes=dex_info.get("classes", []),
+        permissions=metadata.permissions
+    )
+    
+    # Combine sandbox results
+    sandbox_score = 0
+    sandbox_response = None
+    behaviors_detected = []
+    
+    if vt_result.positives > 0:
+        # VirusTotal found detections
+        sandbox_score = vt_result.risk_score
+        behaviors_detected = [
+            {"type": "antivirus", "indicator": name, "severity": "HIGH"}
+            for name in vt_result.malware_names[:5]
+        ]
+    else:
+        # Use local sandbox simulation results
+        sandbox_score = local_sandbox_result.get("risk_score", 0)
+        behaviors_detected = local_sandbox_result.get("behaviors_detected", [])
+    
+    # Create sandbox response
+    sandbox_response = SandboxResponse(
+        detection_ratio=vt_result.detection_ratio,
+        positives=vt_result.positives,
+        total_scanners=vt_result.total_scanners,
+        threat_level=vt_result.threat_level.value,
+        malware_names=vt_result.malware_names,
+        behaviors_detected=behaviors_detected,
+        risk_score=sandbox_score,
+        warnings=vt_result.warnings + local_sandbox_result.get("risk_indicators", []),
+        error_message=vt_result.error_message
+    )
+    
+    # Calculate overall risk (include sandbox score)
     components = {
         "services": metadata.services,
         "receivers": metadata.receivers,
@@ -273,6 +338,21 @@ async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisRespons
         components=components
     )
     
+    # Adjust overall score with sandbox results
+    final_risk_score = risk_report.overall_score
+    if sandbox_score > 0:
+        # Blend sandbox score into final score (weighted average)
+        final_risk_score = int((risk_report.overall_score * 0.7) + (sandbox_score * 0.3))
+        final_risk_score = min(100, final_risk_score)
+    
+    # Determine final classification
+    if final_risk_score <= 30:
+        classification = "SAFE"
+    elif final_risk_score <= 60:
+        classification = "SUSPICIOUS"
+    else:
+        classification = "HIGH_RISK"
+    
     # Build response
     return AnalysisResponse(
         analysis_id=str(uuid.uuid4()),
@@ -281,13 +361,14 @@ async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisRespons
         app_name=risk_report.app_name,
         file_hash=file_hash,
         
-        risk_score=risk_report.overall_score,
-        classification=risk_report.classification.value,
+        risk_score=final_risk_score,
+        classification=classification,
         
         permission_score=risk_report.permission_score,
         certificate_score=risk_report.certificate_score,
         obfuscation_score=risk_report.obfuscation_score,
         network_score=risk_report.network_score,
+        sandbox_score=sandbox_score,
         
         findings=[
             FindingResponse(
@@ -323,9 +404,13 @@ async def _perform_analysis(apk_bytes: bytes, file_hash: str) -> AnalysisRespons
             warnings=cert_result.warnings
         ),
         
+        sandbox=sandbox_response,
+        
         summary=risk_report.summary,
         recommendation=risk_report.recommendation,
-        limitations=risk_report.limitations
+        limitations=risk_report.limitations + [
+            "Sandbox analysis uses VirusTotal API (if configured) and local behavior simulation"
+        ]
     )
 
 
@@ -387,6 +472,127 @@ async def get_limitations():
             "other security solutions. Always download apps from trusted sources."
         )
     }
+
+
+@app.post("/api/v1/report/pdf")
+async def generate_pdf_report(analysis: AnalysisResponse):
+    """
+    Generate a PDF report from analysis results.
+    
+    Returns a downloadable PDF file containing the complete risk assessment.
+    """
+    try:
+        # Create report data
+        report_data = ReportData(
+            analysis_id=analysis.analysis_id,
+            package_name=analysis.package_name,
+            version_name=analysis.version_name,
+            app_name=analysis.app_name,
+            file_hash=analysis.file_hash,
+            analysis_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            risk_score=analysis.risk_score,
+            classification=analysis.classification,
+            permission_score=analysis.permission_score,
+            certificate_score=analysis.certificate_score,
+            obfuscation_score=analysis.obfuscation_score,
+            network_score=analysis.network_score,
+            sandbox_score=analysis.sandbox_score,
+            findings=[f.model_dump() for f in analysis.findings],
+            permissions=[p.model_dump() for p in analysis.permissions],
+            certificate_info=analysis.certificate.model_dump(),
+            sandbox_results=analysis.sandbox.model_dump() if analysis.sandbox else None,
+            summary=analysis.summary,
+            recommendation=analysis.recommendation,
+            limitations=analysis.limitations
+        )
+        
+        # Generate PDF
+        pdf_generator = PDFReportGenerator()
+        pdf_bytes = pdf_generator.generate_report(report_data)
+        
+        # Return as streaming response
+        filename = f"APK_Risk_Report_{analysis.package_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"PDF generation failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+
+
+@app.post("/api/v1/analyze-and-report")
+async def analyze_and_generate_report(file: UploadFile = File(...)):
+    """
+    Analyze an APK and directly generate a PDF report.
+    
+    Combines analysis and PDF generation in one endpoint.
+    Returns the PDF report as a downloadable file.
+    """
+    if not file.filename.endswith('.apk'):
+        raise HTTPException(status_code=400, detail="File must be an APK")
+    
+    try:
+        # Read APK
+        apk_bytes = await file.read()
+        file_hash = hashlib.sha256(apk_bytes).hexdigest()
+        
+        # Perform analysis
+        analysis = await _perform_analysis(apk_bytes, file_hash)
+        
+        # Create report data
+        report_data = ReportData(
+            analysis_id=analysis.analysis_id,
+            package_name=analysis.package_name,
+            version_name=analysis.version_name,
+            app_name=analysis.app_name,
+            file_hash=analysis.file_hash,
+            analysis_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            risk_score=analysis.risk_score,
+            classification=analysis.classification,
+            permission_score=analysis.permission_score,
+            certificate_score=analysis.certificate_score,
+            obfuscation_score=analysis.obfuscation_score,
+            network_score=analysis.network_score,
+            sandbox_score=analysis.sandbox_score,
+            findings=[f.model_dump() for f in analysis.findings],
+            permissions=[p.model_dump() for p in analysis.permissions],
+            certificate_info=analysis.certificate.model_dump(),
+            sandbox_results=analysis.sandbox.model_dump() if analysis.sandbox else None,
+            summary=analysis.summary,
+            recommendation=analysis.recommendation,
+            limitations=analysis.limitations
+        )
+        
+        # Generate PDF
+        pdf_generator = PDFReportGenerator()
+        pdf_bytes = pdf_generator.generate_report(report_data)
+        
+        # Return as streaming response
+        filename = f"APK_Risk_Report_{analysis.package_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Analysis/Report failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Analysis/Report failed: {str(e)}")
 
 
 # ============================================================================
