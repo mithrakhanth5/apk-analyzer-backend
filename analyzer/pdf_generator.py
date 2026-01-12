@@ -110,9 +110,9 @@ class PDFReportGenerator:
             spaceAfter=5
         ))
         
-        # Body text style
+        # Body text style - using different name to avoid conflict
         self.styles.add(ParagraphStyle(
-            name='BodyText',
+            name='ReportBody',
             parent=self.styles['Normal'],
             fontSize=10,
             textColor=self.COLORS["text"],
@@ -253,7 +253,7 @@ class PDFReportGenerator:
         
         elements.append(Paragraph("Executive Summary", self.styles['SectionHeader']))
         
-        elements.append(Paragraph(data.summary or "No summary available.", self.styles['BodyText']))
+        elements.append(Paragraph(data.summary or "No summary available.", self.styles['ReportBody']))
         
         return elements
     
@@ -297,7 +297,7 @@ class PDFReportGenerator:
         elements.append(Paragraph("Security Findings", self.styles['SectionHeader']))
         
         if not data.findings:
-            elements.append(Paragraph("No significant findings.", self.styles['BodyText']))
+            elements.append(Paragraph("No significant findings.", self.styles['ReportBody']))
             return elements
         
         for finding in data.findings[:10]:  # Limit to 10 findings
@@ -310,13 +310,13 @@ class PDFReportGenerator:
             ))
             elements.append(Paragraph(
                 finding.get('description', ''),
-                self.styles['BodyText']
+                self.styles['ReportBody']
             ))
             
             if finding.get('recommendation'):
                 elements.append(Paragraph(
                     f"<b>Recommendation:</b> {finding['recommendation']}",
-                    self.styles['BodyText']
+                    self.styles['ReportBody']
                 ))
             
             elements.append(Spacer(1, 10))
@@ -330,7 +330,7 @@ class PDFReportGenerator:
         elements.append(Paragraph("Permission Analysis", self.styles['SectionHeader']))
         
         if not data.permissions:
-            elements.append(Paragraph("No permissions data available.", self.styles['BodyText']))
+            elements.append(Paragraph("No permissions data available.", self.styles['ReportBody']))
             return elements
         
         # Filter to dangerous permissions only
@@ -360,7 +360,7 @@ class PDFReportGenerator:
         else:
             elements.append(Paragraph(
                 "No dangerous permissions detected.",
-                self.styles['BodyText']
+                self.styles['ReportBody']
             ))
         
         return elements
@@ -397,9 +397,9 @@ class PDFReportGenerator:
         warnings = cert.get('warnings', [])
         if warnings:
             elements.append(Spacer(1, 10))
-            elements.append(Paragraph("<b>Warnings:</b>", self.styles['BodyText']))
+            elements.append(Paragraph("<b>Warnings:</b>", self.styles['ReportBody']))
             for warning in warnings:
-                elements.append(Paragraph(f"• {warning}", self.styles['BodyText']))
+                elements.append(Paragraph(f"• {warning}", self.styles['ReportBody']))
         
         return elements
     
@@ -414,7 +414,7 @@ class PDFReportGenerator:
         if sandbox.get('error_message'):
             elements.append(Paragraph(
                 f"<i>Note: {sandbox['error_message']}</i>",
-                self.styles['BodyText']
+                self.styles['ReportBody']
             ))
             return elements
         
@@ -424,30 +424,30 @@ class PDFReportGenerator:
         
         elements.append(Paragraph(
             f"<b>Detection Ratio:</b> {detection_ratio}",
-            self.styles['BodyText']
+            self.styles['ReportBody']
         ))
         elements.append(Paragraph(
             f"<b>Threat Level:</b> {threat_level.upper()}",
-            self.styles['BodyText']
+            self.styles['ReportBody']
         ))
         
         # Malware names if any
         malware_names = sandbox.get('malware_names', [])
         if malware_names:
             elements.append(Spacer(1, 10))
-            elements.append(Paragraph("<b>Detected As:</b>", self.styles['BodyText']))
+            elements.append(Paragraph("<b>Detected As:</b>", self.styles['ReportBody']))
             for name in malware_names[:5]:
-                elements.append(Paragraph(f"• {name}", self.styles['BodyText']))
+                elements.append(Paragraph(f"• {name}", self.styles['ReportBody']))
         
         # Behavior indicators
         behaviors = sandbox.get('behaviors_detected', [])
         if behaviors:
             elements.append(Spacer(1, 10))
-            elements.append(Paragraph("<b>Behavioral Indicators:</b>", self.styles['BodyText']))
+            elements.append(Paragraph("<b>Behavioral Indicators:</b>", self.styles['ReportBody']))
             for behavior in behaviors[:10]:
                 elements.append(Paragraph(
                     f"• [{behavior.get('severity', 'INFO')}] {behavior.get('type', 'Unknown')}: {behavior.get('indicator', '')}",
-                    self.styles['BodyText']
+                    self.styles['ReportBody']
                 ))
         
         return elements
@@ -459,7 +459,7 @@ class PDFReportGenerator:
         elements.append(Paragraph("Recommendations", self.styles['SectionHeader']))
         elements.append(Paragraph(
             data.recommendation or "Review the analysis results carefully before installation.",
-            self.styles['BodyText']
+            self.styles['ReportBody']
         ))
         
         elements.append(Spacer(1, 20))
@@ -473,7 +473,7 @@ class PDFReportGenerator:
         ]
         
         for limitation in limitations:
-            elements.append(Paragraph(f"• {limitation}", self.styles['BodyText']))
+            elements.append(Paragraph(f"• {limitation}", self.styles['ReportBody']))
         
         return elements
     

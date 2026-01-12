@@ -69,8 +69,8 @@ class CertificateResponse(BaseModel):
     is_debug: bool
     is_self_signed: bool
     is_expired: bool
-    signature_version: Optional[str]
-    warnings: List[str]
+    signature_version: Optional[str] = None
+    warnings: List[str] = []
 
 
 class SandboxResponse(BaseModel):
@@ -98,23 +98,23 @@ class AnalysisResponse(BaseModel):
     classification: str  # SAFE, SUSPICIOUS, HIGH_RISK
     
     # Component scores
-    permission_score: int
-    certificate_score: int
-    obfuscation_score: int
-    network_score: int
+    permission_score: int = 0
+    certificate_score: int = 0
+    obfuscation_score: int = 0
+    network_score: int = 0
     sandbox_score: int = 0  # Sandbox analysis score
     
     # Detailed findings
-    findings: List[FindingResponse]
-    permissions: List[PermissionRiskResponse]
+    findings: List[FindingResponse] = []
+    permissions: List[PermissionRiskResponse] = []
     certificate: CertificateResponse
     sandbox: Optional[SandboxResponse] = None  # Sandbox results
     
-    summary: str
-    recommendation: str
+    summary: str = ""
+    recommendation: str = ""
     
     # Transparency
-    limitations: List[str]
+    limitations: List[str] = []
 
 
 class HealthResponse(BaseModel):
