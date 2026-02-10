@@ -32,7 +32,7 @@ git remote add origin https://github.com/YOUR_USERNAME/apk-risk-analyzer-backend
 git push -u origin main
 ```
 
-> **Important**: Make sure `Dockerfile`, `main.py`, and `requirements.txt` are at the root of the repository.
+> **Important**: This project uses a **monorepo structure**. You MUST configure Koyeb to use `backend_new` as the **Root Directory** (see Step 4).
 
 ---
 
@@ -68,6 +68,7 @@ git push -u origin main
 |---------|-------|
 | **Instance type** | Free (nano) |
 | **Regions** | Select closest to you (Singapore/Frankfurt) |
+| **Root Directory** | `backend_new` |
 
 ### Exposed Ports:
 | Port | Protocol |

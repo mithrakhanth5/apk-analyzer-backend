@@ -18,6 +18,7 @@ Render will automatically detect your `Dockerfile`. Use these settings:
 - **Name**: `apk-analyzer-backend`
 - **Region**: Choose the one closest to you (e.g., Singapore or Mumbai).
 - **Instance Type**: **Free** ($0/month).
+- **Root Directory**: `backend_new` (CRITICAL!)
 - **Click "Create Web Service"**.
 
 ## Step 4: Configure Environment Variables (Optional but Recommended)

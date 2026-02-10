@@ -24,6 +24,6 @@ echo  Your Local IP: 10.184.190.245
 echo  --------------------------------------------------
 echo.
 
-cd backend
+cd ..\backend_new
 python main.py
 pause
